@@ -8,7 +8,7 @@ module Timeline
       "timelines/#{verb}"
     end
 
-    def object
+    def ref_object
       eval(self[:class]).find(self[:id]) rescue nil
     end
 
