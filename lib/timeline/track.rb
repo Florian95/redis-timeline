@@ -23,12 +23,12 @@ module Timeline::Track
     private
       def define_activity_method(method_name, options={})
         define_method method_name do
-          @actor = send(options[:actor])
+          @actor = send(options[:actor]) rescue nil
           @fields_for = {}
           @object = set_object(options[:object])
           @target = !options[:target].nil? ? send(options[:target].to_sym) : nil
           @extra_fields ||= nil
-          @followers = @actor.send(options[:followers].to_sym)
+          @followers = @actor.send(options[:followers].to_sym) rescue Array.new
           @mentionable = options[:mentionable]
           add_activity activity(verb: options[:verb])
         end
@@ -48,10 +48,12 @@ module Timeline::Track
 
     def add_activity(activity_item)
       redis_add "global:activity", activity_item
-      add_activity_to_user(activity_item[:actor][:id], activity_item)
-      add_activity_by_user(activity_item[:actor][:id], activity_item)
-      add_mentions(activity_item)
-      add_activity_to_followers(activity_item) if @followers.any?
+      unless activity_item[:actor].blank?
+        add_activity_to_user(activity_item[:actor][:id], activity_item)
+        add_activity_by_user(activity_item[:actor][:id], activity_item)
+        add_mentions(activity_item)
+        add_activity_to_followers(activity_item) if @followers.any?
+      end
     end
 
     def add_activity_by_user(user_id, activity_item)
