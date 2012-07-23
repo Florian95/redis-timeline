@@ -1,6 +1,14 @@
 require 'multi_json/version'
 
 module Timeline
+
+  def self.get_global_activity(limit = 20)
+    ::Timeline.get_list({list_name: "global:activity", start: 0, end: limit }).map do |item|
+      ::Timeline::Activity.new ::Timeline.decode(item)
+    end
+  end
+  # module_function :get_global_activity
+
   module Helpers
     class DecodeException < StandardError; end
 

@@ -45,7 +45,7 @@ module Timeline::Track
   protected
     def activity(options={})
       {
-        cache_key: "#{options[:verb]}_u#{@actor.id}_o#{@object.id}_#{Time.now.to_i}",
+        cache_key: @actor.nil? ? "#{options[:verb]}_o#{@object.id}_#{Time.now.to_i}" : "#{options[:verb]}_u#{@actor.id}_o#{@object.id}_#{Time.now.to_i}",
         verb: options[:verb],
         actor: options_for(@actor),
         object: options_for(@object),

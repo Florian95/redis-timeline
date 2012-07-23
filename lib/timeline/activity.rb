@@ -7,5 +7,10 @@ module Timeline
     def to_partial_path
       "timelines/#{verb}"
     end
+
+    def object
+      eval(self[:class]).find(self[:id]) rescue nil
+    end
+
   end
 end
