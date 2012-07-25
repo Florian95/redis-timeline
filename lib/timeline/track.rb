@@ -1,6 +1,37 @@
 module Timeline::Track
   extend ActiveSupport::Concern
 
+  # Instance Methods
+  included do
+
+    # Following functions
+    def add_follower(actor)
+      add_follower_to_object(self, actor)
+    end
+
+    def remove_follower(actor)
+      remove_follower_to_object(self, actor)
+    end
+
+    def toggle_follower(actor)
+      if Timeline.redis.sismember "#{self.class}:id:#{self.id}:followers", "user:id:#{actor.id}"
+        remove_follower_to_object(self, actor)
+      else
+        add_follower_to_object(self, actor)
+      end
+    end
+
+    def followers
+      redis_get_set(self)
+    end
+
+    def count_followers
+      return 0 if self.nil?
+      redis_count_set(self)
+    end
+
+  end
+
   module ClassMethods
     def track(name, options={})
       @name = name
@@ -10,16 +41,16 @@ module Timeline::Track
       @actor ||= :creator
       @object = options.delete :object
       @target = options.delete :target
-      @followers = options.delete :followers
-      @followers ||= :followers
+      @global = options.delete :global
+      @global ||= true
       @mentionable = options.delete :mentionable
 
       method_name = "track_#{@name}_after_#{@callback}".to_sym
       define_activity_method method_name, actor: @actor,
                                           object: @object,
                                           target: @target,
-                                          followers: @followers,
                                           verb: name,
+                                          global: @global,
                                           merge_similar: options[:merge_similar],
                                           mentionable: @mentionable
 
@@ -34,9 +65,9 @@ module Timeline::Track
           @object = set_object(options[:object])
           @target = !options[:target].nil? ? send(options[:target].to_sym) : nil
           @extra_fields ||= nil
-          @followers = @actor.send(options[:followers].to_sym) rescue Array.new
           @merge_similar = options[:merge_similar] == true ? true : false
           @mentionable = options[:mentionable]
+          @global = options[:global]
           add_activity(activity(verb: options[:verb]))
         end
       end
@@ -56,13 +87,13 @@ module Timeline::Track
 
     def add_activity(activity_item)
       redis_store_item(activity_item)
-      add_activity_by_global(activity_item)
+      add_activity_by_global(activity_item) if @global
       unless activity_item[:actor].blank?
         add_activity_to_user(activity_item[:actor][:id], activity_item)
         add_activity_by_user(activity_item[:actor][:id], activity_item)
         add_mentions(activity_item)
-        add_activity_to_followers(activity_item) if @followers.any?
       end
+      add_activity_to_followers(activity_item) #if followers.any?
     end
 
     def add_activity_by_global(activity_item)
@@ -78,7 +109,22 @@ module Timeline::Track
     end
 
     def add_activity_to_followers(activity_item)
-      @followers.each { |follower| add_activity_to_user(follower.id, activity_item) }
+      if @target
+        v_followers = redis_get_set(@target)
+      else
+        v_followers = redis_get_set(@object)
+      end
+      v_followers.each { |follower| redis_add "#{follower}:activity", activity_item }
+    end
+
+    def add_follower_to_object(object, follower)
+      return if object.nil? || follower.nil?
+      redis_add_to_set "#{object.class}:id:#{object.id}:followers", "user:id:#{follower.id}"
+    end
+
+    def remove_follower_to_object(object, follower)
+      return if object.nil? || follower.nil?
+      redis_remove_from_set "#{object.class}:id:#{object.id}:followers", "user:id:#{follower.id}"
     end
 
     def add_mentions(activity_item)
@@ -95,6 +141,7 @@ module Timeline::Track
     end
 
     def extra_fields_for(object)
+      return {} if @fields_for.nil?
       return {} unless @fields_for.has_key?(object.class.to_s.downcase.to_sym)
       @fields_for[object.class.to_s.downcase.to_sym].inject({}) do |sum, method|
         sum[method.to_sym] = @object.send(method.to_sym)
@@ -117,6 +164,23 @@ module Timeline::Track
     def redis_add(list, activity_item)
       Timeline.redis.lpush list, activity_item[:cache_key]
     end
+
+    def redis_add_to_set(set, item)
+      Timeline.redis.sadd set, item
+    end
+
+    def redis_remove_from_set(set, item)
+      Timeline.redis.srem set, item
+    end
+
+    def redis_count_set(object)
+      Timeline.redis.scard "#{object.class}:id:#{object.id}:followers" rescue 0
+    end
+
+    def redis_get_set(object)
+      Timeline.redis.smembers "#{object.class}:id:#{object.id}:followers" rescue Array.new
+    end
+
 
     def redis_store_item(activity_item)
       if @merge_similar

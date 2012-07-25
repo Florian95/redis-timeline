@@ -9,6 +9,10 @@ module Timeline
         end
       end
 
+      def following?(object)
+        Timeline.redis.sismember "#{object.class}:id:#{object.id}:followers", "user:id:#{self.id}"
+      end
+
       def followers
         []
       end
